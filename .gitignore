@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Secrets and local settings (never commit these)
+.env
+.env.*
+!.env.example
+
+# Build output and logs
+dist/
+build/
+*.log
+npm-debug.log*
+
+# Editor and system files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Postman exports can contain tokens; remove this line only after checking them
+postman/
+
+# Documents you don't want in the repo
+*.docx
