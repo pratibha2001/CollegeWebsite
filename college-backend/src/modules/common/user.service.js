@@ -26,8 +26,12 @@ export async function findOrCreateUser({ subjectType, subject, fullName }) {
       err.status = 403;
       throw err;
     }
+    console.log('USER:', user);
     return user;
+    
   }
+
+  
 
   const created = await pool.query(
     `insert into "Common"."Users" ("UserType", "FullName", "${contact}", "Status", "${verified}", "LastLoginAt")

@@ -75,3 +75,71 @@ export async function listMine(userId) {
   );
   return rows;
 }
+
+export async function savePersonal({ userId, applicationId, data }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+
+    const app = await client.query(
+      `select "Status" from "Admission"."Applications"
+       where "ApplicationId" = $1 and "ApplicantUserId" = $2
+       for update`,
+      [applicationId, userId]
+    );
+    if (app.rows.length === 0) throw httpError(404, 'Application not found');
+    if (app.rows[0].Status !== 'Draft') throw httpError(409, 'This application can no longer be edited');
+
+    await client.query(
+      `insert into "Admission"."ApplicationPersonal"
+         ("ApplicationId", "DateOfBirth", "Gender", "Category", "IsPwd", "Nationality", "HomeState",
+          "GuardianName", "GuardianRelation", "GuardianMobile", "GuardianEmail",
+          "AddressCurrent", "AddressPermanent", "NeedsHostel", "NeedsTransport")
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       on conflict ("ApplicationId") do update set
+         "DateOfBirth" = excluded."DateOfBirth",
+         "Gender" = excluded."Gender",
+         "Category" = excluded."Category",
+         "IsPwd" = excluded."IsPwd",
+         "Nationality" = excluded."Nationality",
+         "HomeState" = excluded."HomeState",
+         "GuardianName" = excluded."GuardianName",
+         "GuardianRelation" = excluded."GuardianRelation",
+         "GuardianMobile" = excluded."GuardianMobile",
+         "GuardianEmail" = excluded."GuardianEmail",
+         "AddressCurrent" = excluded."AddressCurrent",
+         "AddressPermanent" = excluded."AddressPermanent",
+         "NeedsHostel" = excluded."NeedsHostel",
+         "NeedsTransport" = excluded."NeedsTransport"`,
+      [
+        applicationId, data.dateOfBirth, data.gender, data.category, data.isPwd, data.nationality,
+        data.homeState, data.guardianName, data.guardianRelation, data.guardianMobile,
+        data.guardianEmail, data.addressCurrent, data.addressPermanent,
+        data.needsHostel, data.needsTransport,
+      ]
+    );
+
+    await client.query(
+      `update "Admission"."Applications"
+       set "CurrentStep" = greatest("CurrentStep", 2),
+           "UpdatedAt" = now(),
+           "RowVersion" = "RowVersion" + 1
+       where "ApplicationId" = $1`,
+      [applicationId]
+    );
+
+    const minor = await client.query(
+      `select age(current_date, "DateOfBirth") < interval '18 years' as "isMinor"
+       from "Admission"."ApplicationPersonal" where "ApplicationId" = $1`,
+      [applicationId]
+    );
+
+    await client.query('commit');
+    return { saved: true, isMinor: minor.rows[0].isMinor };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}

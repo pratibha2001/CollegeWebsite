@@ -1,7 +1,7 @@
 import pool from '../../config/db.js';
 import { hmac, generateOtp, safeEqual } from '../../shared/crypto.js';
 
-const normalize = (type, value) =>
+export const normalize = (type, value) =>
   type === 'Email' ? value.trim().toLowerCase() : value.replace(/[\s-]/g, '');
 
 const hashSubject = (type, subject) => hmac(`${type}:${normalize(type, subject)}`);

@@ -1,42 +1,64 @@
-import { Router } from 'express';
-import { requestOtp, verifyOtp } from './otp.service.js';
-import { authenticate, requirePermission } from '../../middleware/auth.js';
+import { Router } from "express";
+import { authenticate, requirePermission } from "../../middleware/auth.js";
+import { requestOtp, verifyOtp, normalize } from "./otp.service.js";
+import { findOrCreateUser, getRoleCodes } from "./user.service.js";
+import { signToken } from "../../shared/jwt.js";
 
 const router = Router();
 
-router.post('/otp/request', async (req, res, next) => {
+router.post("/otp/request", async (req, res, next) => {
   try {
     const { subjectType, subject } = req.body;
-    if (!['Email', 'Mobile'].includes(subjectType) || !subject) {
-      return res.status(400).json({ error: 'subjectType (Email or Mobile) and subject are required' });
+    if (!["Email", "Mobile"].includes(subjectType) || !subject) {
+      return res
+        .status(400)
+        .json({
+          error: "subjectType (Email or Mobile) and subject are required",
+        });
     }
-    const result = await requestOtp({ subjectType, subject, purpose: 'Login', ip: req.ip });
+    const result = await requestOtp({
+      subjectType,
+      subject,
+      purpose: "Login",
+      ip: req.ip,
+    });
     res.json(result);
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/otp/verify', async (req, res, next) => {
+router.post("/otp/verify", async (req, res, next) => {
   try {
-    const { subjectType, subject, code } = req.body;
-    if (!['Email', 'Mobile'].includes(subjectType) || !subject || !/^\d{6}$/.test(code)) {
-      return res.status(400).json({ error: 'subjectType, subject and a 6-digit code are required' });
-    }
-    await verifyOtp({ subjectType, subject, purpose: 'Login', code });
-    res.json({ verified: true });
+    const { subjectType, subject, purpose, code } = req.body;
+    const ok = await verifyOtp({ subjectType, subject, purpose, code });
+    if (!ok) return res.status(400).json({ error: "Invalid or expired code" });
+
+    const user = await findOrCreateUser({ subjectType, subject });
+    const roles = await getRoleCodes(user.UserId);
+    const token = signToken(user.UserId, roles);
+
+    res.json({
+      token,
+      user: { id: user.UserId, fullName: user.FullName, roles },
+    });
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/me', authenticate, (req, res) => {
+router.get("/me", authenticate, (req, res) => {
   res.json(req.user);
 });
 
 // temporary, to test permissions. Delete later.
-router.get('/test-review', authenticate, requirePermission('APPLICATION_REVIEW'), (req, res) => {
-  res.json({ allowed: true });
-});
+router.get(
+  "/test-review",
+  authenticate,
+  requirePermission("APPLICATION_REVIEW"),
+  (req, res) => {
+    res.json({ allowed: true });
+  },
+);
 
 export default router;
