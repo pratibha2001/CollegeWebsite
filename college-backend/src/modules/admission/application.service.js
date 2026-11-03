@@ -17,7 +17,7 @@ export async function createDraft({ userId, programmeId, intakeMonth }) {
 
     const form = await client.query(
       `select "FormDefinitionId" from "Admission"."FormDefinitions"
-       where "FormKey" = 'undergraduate-application' and "Status" = 'Published'
+       where "FormKey" = 'application.default' and "Status" = 'Published'
        order by "Version" desc limit 1`
     );
     if (form.rows.length === 0) throw httpError(500, 'No published application form');
