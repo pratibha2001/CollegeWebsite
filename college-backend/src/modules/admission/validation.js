@@ -50,3 +50,49 @@ export function parsePersonal(body) {
     },
   };
 }
+
+const LEVELS = ['Secondary', 'SeniorSecondary', 'Diploma', 'Undergraduate', 'Postgraduate', 'Other'];
+
+export function parseAcademics(body) {
+  const list = body?.records;
+  if (!Array.isArray(list) || list.length === 0) {
+    return { errors: ['records must be a non-empty list'] };
+  }
+  const errors = [];
+  const seen = new Set();
+  const maxYear = new Date().getFullYear() + 1;
+
+  const value = list.map((raw, i) => {
+    const r = raw ?? {};
+    const at = `records[${i}]`;
+    if (!LEVELS.includes(r.level)) errors.push(`${at}.level must be one of ${LEVELS.join(', ')}`);
+    if (seen.has(r.level)) errors.push(`${at}.level ${r.level} is listed twice`);
+    seen.add(r.level);
+    if (typeof r.boardOrUniversity !== 'string' || !r.boardOrUniversity.trim()) {
+      errors.push(`${at}.boardOrUniversity is required`);
+    }
+    const year = Number(r.yearOfPassing);
+    if (!Number.isInteger(year) || year < 1980 || year > maxYear) {
+      errors.push(`${at}.yearOfPassing must be between 1980 and ${maxYear}`);
+    }
+    const hasMarks = r.marksObtained != null || r.marksTotal != null;
+    const got = Number(r.marksObtained);
+    const total = Number(r.marksTotal);
+    if (hasMarks && !(total > 0 && got >= 0 && got <= total)) {
+      errors.push(`${at} marksObtained must be between 0 and marksTotal`);
+    }
+    return {
+      level: r.level,
+      boardOrUniversity: r.boardOrUniversity?.trim(),
+      institution: r.institution?.trim() || null,
+      yearOfPassing: year,
+      marksObtained: hasMarks ? got : null,
+      marksTotal: hasMarks ? total : null,
+      percentage: hasMarks ? Math.round((got / total) * 10000) / 100 : null,
+    };
+  });
+
+  if (!seen.has('Secondary')) errors.push('Class 10 (Secondary) is required');
+  if (!seen.has('SeniorSecondary')) errors.push('Class 12 (SeniorSecondary) is required');
+  return errors.length ? { errors } : { value };
+}

@@ -143,3 +143,62 @@ export async function savePersonal({ userId, applicationId, data }) {
     client.release();
   }
 }
+
+export async function saveAcademics({ userId, applicationId, records }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+
+    const app = await client.query(
+      `select "Status" from "Admission"."Applications"
+       where "ApplicationId" = $1 and "ApplicantUserId" = $2
+       for update`,
+      [applicationId, userId]
+    );
+    if (app.rows.length === 0) throw httpError(404, 'Application not found');
+    if (app.rows[0].Status !== 'Draft') throw httpError(409, 'This application can no longer be edited');
+
+    // remove levels the applicant took out of the list (e.g. a Diploma they deleted)
+    await client.query(
+      `delete from "Admission"."ApplicationAcademics"
+       where "ApplicationId" = $1 and not ("Level" = any($2))`,
+      [applicationId, records.map((r) => r.level)]
+    );
+
+    for (const r of records) {
+      await client.query(
+        `insert into "Admission"."ApplicationAcademics"
+           ("ApplicationId", "Level", "BoardOrUniversity", "Institution", "YearOfPassing",
+            "MarksObtained", "MarksTotal", "Percentage")
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict ("ApplicationId", "Level") do update set
+           "BoardOrUniversity" = excluded."BoardOrUniversity",
+           "Institution" = excluded."Institution",
+           "YearOfPassing" = excluded."YearOfPassing",
+           "MarksObtained" = excluded."MarksObtained",
+           "MarksTotal" = excluded."MarksTotal",
+           "Percentage" = excluded."Percentage",
+           "Verified" = false`,
+        [applicationId, r.level, r.boardOrUniversity, r.institution, r.yearOfPassing,
+         r.marksObtained, r.marksTotal, r.percentage]
+      );
+    }
+
+    await client.query(
+      `update "Admission"."Applications"
+       set "CurrentStep" = greatest("CurrentStep", 3),
+           "UpdatedAt" = now(),
+           "RowVersion" = "RowVersion" + 1
+       where "ApplicationId" = $1`,
+      [applicationId]
+    );
+
+    await client.query('commit');
+    return { saved: true, records: records.length };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
