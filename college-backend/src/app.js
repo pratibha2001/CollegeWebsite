@@ -19,6 +19,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admission', admissionRoutes);
 
 app.use((err, req, res, next) => {
+  if (err.name === 'MulterError') return res.status(400).json({ error: err.message });
   if (!err.status) console.error(err);
   res.status(err.status || 500).json({ error: err.status ? err.message : 'Server error' });
 });

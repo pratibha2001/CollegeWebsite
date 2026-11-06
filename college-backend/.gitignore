@@ -21,5 +21,8 @@ Thumbs.db
 postman/
 .postman/
 
+#uploads 
+uploads/
+
 # Documents you don't want in the repo
 *.docx

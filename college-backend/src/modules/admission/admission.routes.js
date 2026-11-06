@@ -4,6 +4,10 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { parsePersonal, parseAcademics } from './validation.js';
 import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
 
+import multer from 'multer';
+import { uploadDocument } from './document.service.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
 const router = Router();
 
@@ -90,6 +94,28 @@ router.put(
       const { value, errors } = parseAcademics(req.body);
       if (errors) return res.status(400).json({ errors });
       res.json(await saveAcademics({ userId: req.user.id, applicationId, records: value }));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+
+router.post(
+  '/applications/:id/documents',
+  authenticate,
+  requirePermission('APPLICATION_CREATE_OWN'),
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      const applicationId = Number(req.params.id);
+      if (!Number.isInteger(applicationId)) {
+        return res.status(400).json({ error: 'Invalid application id' });
+      }
+      const result = await uploadDocument({
+        userId: req.user.id, applicationId, typeCode: req.body.typeCode, file: req.file,
+      });
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }
