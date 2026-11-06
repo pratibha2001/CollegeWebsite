@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
-import { createDraft, listMine, savePersonal } from './application.service.js';
-import { parsePersonal } from './validation.js';
+import { parsePersonal, parseAcademics } from './validation.js';
+import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
+
 
 const router = Router();
 
@@ -70,6 +71,25 @@ router.put(
       const { value, errors } = parsePersonal(req.body);
       if (errors) return res.status(400).json({ errors });
       res.json(await savePersonal({ userId: req.user.id, applicationId, data: value }));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.put(
+  '/applications/:id/academics',
+  authenticate,
+  requirePermission('APPLICATION_CREATE_OWN'),
+  async (req, res, next) => {
+    try {
+      const applicationId = Number(req.params.id);
+      if (!Number.isInteger(applicationId)) {
+        return res.status(400).json({ error: 'Invalid application id' });
+      }
+      const { value, errors } = parseAcademics(req.body);
+      if (errors) return res.status(400).json({ errors });
+      res.json(await saveAcademics({ userId: req.user.id, applicationId, records: value }));
     } catch (err) {
       next(err);
     }
