@@ -4,6 +4,7 @@ import { requestOtp, verifyOtp, normalize } from "./otp.service.js";
 import { findOrCreateUser, getRoleCodes } from "./user.service.js";
 import { signToken } from "../../shared/jwt.js";
 
+
 const router = Router();
 
 router.post("/otp/request", async (req, res, next) => {
@@ -60,5 +61,7 @@ router.get(
     res.json({ allowed: true });
   },
 );
+
+
 
 export default router;

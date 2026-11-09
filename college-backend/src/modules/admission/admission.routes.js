@@ -3,6 +3,7 @@ import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { parsePersonal, parseAcademics } from './validation.js';
 import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
+import { requestGuardianConsent, confirmGuardianConsent } from './guardian.service.js';
 
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
@@ -116,6 +117,38 @@ router.post(
         userId: req.user.id, applicationId, typeCode: req.body.typeCode, file: req.file,
       });
       res.status(201).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/applications/:id/guardian-consent/request',
+  authenticate,
+  requirePermission('APPLICATION_CREATE_OWN'),
+  async (req, res, next) => {
+    try {
+      const applicationId = Number(req.params.id);
+      if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+      res.json(await requestGuardianConsent({ userId: req.user.id, applicationId, ip: req.ip }));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/applications/:id/guardian-consent/verify',
+  authenticate,
+  requirePermission('APPLICATION_CREATE_OWN'),
+  async (req, res, next) => {
+    try {
+      const applicationId = Number(req.params.id);
+      if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+      const code = String(req.body?.code ?? '');
+      if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'A 6-digit code is required' });
+      res.json(await confirmGuardianConsent({ userId: req.user.id, applicationId, code, ip: req.ip }));
     } catch (err) {
       next(err);
     }
