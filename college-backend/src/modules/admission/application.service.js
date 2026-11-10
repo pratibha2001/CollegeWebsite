@@ -303,3 +303,25 @@ export async function submitApplication({ userId, applicationId }) {
     client.release();
   }
 }
+
+export async function getApplicationFee(db, { userId, applicationId }) {
+  const { rows } = await db.query(
+    `select a."Status", a."FeeStatus", w."ApplicationFeePaise"
+     from "Admission"."Applications" a
+     join "Admission"."ApplicationWindows" w
+       on w."ProgrammeId" = a."ProgrammeId" and w."AcademicYear" = a."AcademicYear"
+     where a."ApplicationId" = $1 and a."ApplicantUserId" = $2`,
+    [applicationId, userId]
+  );
+  if (!rows[0]) throw httpError(404, 'Application not found');
+  return { status: rows[0].Status, feeStatus: rows[0].FeeStatus, feePaise: Number(rows[0].ApplicationFeePaise) };
+}
+
+export async function markApplicationFeePaid(db, applicationId) {
+  await db.query(
+    `update "Admission"."Applications"
+     set "FeeStatus" = 'Paid', "UpdatedAt" = now(), "RowVersion" = "RowVersion" + 1
+     where "ApplicationId" = $1 and "FeeStatus" = 'Pending'`,
+    [applicationId]
+  );
+}
