@@ -4,7 +4,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { parsePersonal, parseAcademics } from './validation.js';
 import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
 import { requestGuardianConsent, confirmGuardianConsent } from './guardian.service.js';
-
+import { submitApplication } from './application.service.js';
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
 
@@ -149,6 +149,28 @@ router.post(
       const code = String(req.body?.code ?? '');
       if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'A 6-digit code is required' });
       res.json(await confirmGuardianConsent({ userId: req.user.id, applicationId, code, ip: req.ip }));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/applications/:id/submit',
+  authenticate,
+  requirePermission('APPLICATION_CREATE_OWN'),
+  async (req, res, next) => {
+    try {
+      const applicationId = Number(req.params.id);
+      if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+      if (req.body?.declarationAccepted !== true) {
+        return res.status(400).json({ error: 'You must accept the declaration' });
+      }
+      const result = await submitApplication({ userId: req.user.id, applicationId });
+      if (!result.submitted) {
+        return res.status(422).json({ error: 'Application is incomplete', missing: result.missing });
+      }
+      res.json(result);
     } catch (err) {
       next(err);
     }

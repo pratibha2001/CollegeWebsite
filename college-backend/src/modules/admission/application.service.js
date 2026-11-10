@@ -202,3 +202,104 @@ export async function saveAcademics({ userId, applicationId, records }) {
     client.release();
   }
 }
+
+
+const REQUIRED_DOCS = ['PHOTO', 'SIGNATURE', 'MARKSHEET_10'];
+
+export async function submitApplication({ userId, applicationId }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+
+    const { rows } = await client.query(
+      `select a."Status", a."ProgrammeId", a."GuardianConsentRecordId",
+              p."ApplicationId" is not null as "hasPersonal",
+              age(current_date, p."DateOfBirth") < interval '18 years' as "isMinor",
+              w."ApplicationFeePaise",
+              now() between w."OpensAt" and w."ClosesAt" as "windowOpen"
+       from "Admission"."Applications" a
+       left join "Admission"."ApplicationPersonal" p on p."ApplicationId" = a."ApplicationId"
+       left join "Admission"."ApplicationWindows" w
+         on w."ProgrammeId" = a."ProgrammeId" and w."AcademicYear" = a."AcademicYear"
+       where a."ApplicationId" = $1 and a."ApplicantUserId" = $2
+       for update of a`,
+      [applicationId, userId]
+    );
+    const app = rows[0];
+    if (!app) throw httpError(404, 'Application not found');
+    if (app.Status !== 'Draft') throw httpError(409, 'This application has already been submitted');
+    if (!app.windowOpen) throw httpError(400, 'Applications are closed for this programme');
+
+    // collect everything that is missing, so the applicant sees it all at once
+    const missing = [];
+    if (!app.hasPersonal) missing.push('personal and guardian details');
+    if (app.isMinor && !app.GuardianConsentRecordId) missing.push('guardian consent');
+
+    const levels = await client.query(
+      `select "Level" from "Admission"."ApplicationAcademics" where "ApplicationId" = $1`,
+      [applicationId]
+    );
+    const haveLevels = levels.rows.map((r) => r.Level);
+    if (!haveLevels.includes('Secondary')) missing.push('Class 10 marks');
+    if (!haveLevels.includes('SeniorSecondary')) missing.push('Class 12 details');
+
+    const docs = await client.query(
+      `select t."TypeCode" from "Admission"."Documents" d
+       join "Admission"."DocumentTypes" t on t."DocumentTypeId" = d."DocumentTypeId"
+       where d."ApplicationId" = $1 and d."DeletedAt" is null`,
+      [applicationId]
+    );
+    const uploaded = docs.rows.map((r) => r.TypeCode);
+    for (const code of REQUIRED_DOCS) {
+      if (!uploaded.includes(code)) missing.push(`document ${code}`);
+    }
+
+    if (missing.length > 0) {
+      await client.query('rollback');
+      return { submitted: false, missing };
+    }
+
+    const feePaise = Number(app.ApplicationFeePaise);
+    const updated = await client.query(
+      `update "Admission"."Applications"
+       set "Status" = 'Submitted',
+           "ApplicationNo" = 'APP' || left("AcademicYear", 4) || lpad("ApplicationId"::text, 6, '0'),
+           "SubmittedAt" = now(),
+           "DeclarationAcceptedAt" = now(),
+           "FeeStatus" = case when $2::bigint = 0 then 'NotRequired' else "FeeStatus" end,
+           "CurrentStep" = greatest("CurrentStep", 6),
+           "UpdatedAt" = now(),
+           "RowVersion" = "RowVersion" + 1
+       where "ApplicationId" = $1
+       returning "ApplicationNo", "FeeStatus"`,
+      [applicationId, feePaise]
+    );
+    const { ApplicationNo, FeeStatus } = updated.rows[0];
+
+    await client.query(
+      `insert into "Admission"."ApplicationStatusHistory"
+         ("ApplicationId", "FromStatus", "ToStatus", "ActorUserId", "ActorType")
+       values ($1, 'Draft', 'Submitted', $2, 'Applicant')`,
+      [applicationId, userId]
+    );
+
+    await client.query(
+      `insert into "Common"."OutboxEvents" ("AggregateType", "AggregateId", "EventType", "Payload")
+       values ('Application', $1, 'ApplicationSubmitted', $2)`,
+      [String(applicationId), { applicationId, applicationNo: ApplicationNo, programmeId: app.ProgrammeId }]
+    );
+
+    await client.query('commit');
+    return {
+      submitted: true,
+      applicationNo: ApplicationNo,
+      feeStatus: FeeStatus,
+      amountDueRupees: FeeStatus === 'Pending' ? feePaise / 100 : 0,
+    };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
