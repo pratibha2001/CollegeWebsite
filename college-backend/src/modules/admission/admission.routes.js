@@ -5,6 +5,7 @@ import { parsePersonal, parseAcademics } from './validation.js';
 import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
 import { requestGuardianConsent, confirmGuardianConsent } from './guardian.service.js';
 import { submitApplication } from './application.service.js';
+import { listQueue, getApplicationDetail, startReview } from './review.service.js';
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
 
@@ -176,6 +177,38 @@ router.post(
     }
   }
 );
+
+const STATUSES = ['Submitted', 'UnderReview'];
+
+router.get('/review/queue', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const status = req.query.status ?? 'Submitted';
+    if (!STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
+    res.json(await listQueue({ status }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/review/applications/:id', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const applicationId = Number(req.params.id);
+    if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+    res.json(await getApplicationDetail(applicationId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/review/applications/:id/start', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const applicationId = Number(req.params.id);
+    if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+    res.json(await startReview({ staffUserId: req.user.id, applicationId }));
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;
 

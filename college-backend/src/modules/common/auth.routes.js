@@ -52,15 +52,7 @@ router.get("/me", authenticate, (req, res) => {
   res.json(req.user);
 });
 
-// temporary, to test permissions. Delete later.
-router.get(
-  "/test-review",
-  authenticate,
-  requirePermission("APPLICATION_REVIEW"),
-  (req, res) => {
-    res.json({ allowed: true });
-  },
-);
+
 
 
 
