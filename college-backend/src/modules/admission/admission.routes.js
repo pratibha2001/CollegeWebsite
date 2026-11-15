@@ -5,7 +5,7 @@ import { parsePersonal, parseAcademics } from './validation.js';
 import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
 import { requestGuardianConsent, confirmGuardianConsent } from './guardian.service.js';
 import { submitApplication } from './application.service.js';
-import { listQueue, getApplicationDetail, startReview } from './review.service.js';
+import { listQueue, getApplicationDetail, startReview, verifyDocument, completeReview } from './review.service.js';
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
 
@@ -205,6 +205,29 @@ router.post('/review/applications/:id/start', authenticate, requirePermission('A
     const applicationId = Number(req.params.id);
     if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
     res.json(await startReview({ staffUserId: req.user.id, applicationId }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/review/documents/:docId/verify', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const documentId = Number(req.params.docId);
+    const { decision, reason } = req.body ?? {};
+    if (!Number.isInteger(documentId)) return res.status(400).json({ error: 'Invalid document id' });
+    if (!['Verified', 'Rejected'].includes(decision)) return res.status(400).json({ error: 'decision must be Verified or Rejected' });
+    if (decision === 'Rejected' && !reason?.trim()) return res.status(400).json({ error: 'A reason is required when rejecting' });
+    res.json(await verifyDocument({ staffUserId: req.user.id, documentId, decision, reason: reason?.trim() }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/review/applications/:id/complete', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const applicationId = Number(req.params.id);
+    if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+    res.json(await completeReview({ staffUserId: req.user.id, applicationId, note: req.body?.note }));
   } catch (err) {
     next(err);
   }

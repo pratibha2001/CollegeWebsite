@@ -95,3 +95,96 @@ export async function startReview({ staffUserId, applicationId }) {
     client.release();
   }
 }
+
+async function lockAssigned(client, applicationId, staffUserId) {
+  const { rows } = await client.query(
+    `select "Status", "AssignedReviewerId" from "Admission"."Applications"
+     where "ApplicationId" = $1 for update`,
+    [applicationId]
+  );
+  const app = rows[0];
+  if (!app) throw httpError(404, 'Application not found');
+  if (app.Status !== 'UnderReview') throw httpError(409, `Application is ${app.Status}, not UnderReview`);
+  if (app.AssignedReviewerId !== staffUserId) throw httpError(403, 'This application is assigned to another reviewer');
+}
+
+export async function verifyDocument({ staffUserId, documentId, decision, reason }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const doc = await client.query(
+      `select "ApplicationId" from "Admission"."Documents"
+       where "DocumentId" = $1 and "DeletedAt" is null`,
+      [documentId]
+    );
+    if (!doc.rows[0]) throw httpError(404, 'Document not found');
+    await lockAssigned(client, doc.rows[0].ApplicationId, staffUserId);
+
+    await client.query(
+      `update "Admission"."Documents"
+       set "VerificationStatus" = $2, "VerifiedBy" = $3, "VerifiedAt" = now(),
+           "RejectionReason" = $4
+       where "DocumentId" = $1`,
+      [documentId, decision, staffUserId, decision === 'Rejected' ? reason : null]
+    );
+    await client.query('commit');
+    return { documentId, verificationStatus: decision };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function completeReview({ staffUserId, applicationId, note }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await lockAssigned(client, applicationId, staffUserId);
+
+    const docs = await client.query(
+      `select "VerificationStatus", count(*)::int as n from "Admission"."Documents"
+       where "ApplicationId" = $1 and "DeletedAt" is null
+       group by "VerificationStatus"`,
+      [applicationId]
+    );
+    const count = Object.fromEntries(docs.rows.map((r) => [r.VerificationStatus, r.n]));
+    if (count.Pending) throw httpError(409, `${count.Pending} document(s) still need checking`);
+
+    const toStatus = count.Rejected ? 'DocumentsPending' : 'Shortlisted';
+
+    await client.query(
+      `update "Admission"."Applications" a
+       set "Status" = $2::varchar,
+    "MeritScore" = case when $2::varchar = 'Shortlisted' then (
+             select coalesce(
+               max(ac."Percentage") filter (where ac."Level" = 'SeniorSecondary'),
+               max(ac."Percentage") filter (where ac."Level" = 'Secondary'))
+             from "Admission"."ApplicationAcademics" ac
+             where ac."ApplicationId" = a."ApplicationId") else a."MeritScore" end,
+           "UpdatedAt" = now(), "RowVersion" = "RowVersion" + 1
+       where a."ApplicationId" = $1`,
+      [applicationId, toStatus]
+    );
+    if (toStatus === 'Shortlisted') {
+      await client.query(
+        `update "Admission"."ApplicationAcademics" set "Verified" = true where "ApplicationId" = $1`,
+        [applicationId]
+      );
+    }
+    await client.query(
+      `insert into "Admission"."ApplicationStatusHistory"
+         ("ApplicationId", "FromStatus", "ToStatus", "ActorUserId", "ActorType", "Reason")
+       values ($1, 'UnderReview', $2, $3, 'Staff', $4)`,
+      [applicationId, toStatus, staffUserId, note ?? null]
+    );
+    await client.query('commit');
+    return { applicationId, status: toStatus };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
