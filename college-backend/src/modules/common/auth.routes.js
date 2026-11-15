@@ -52,7 +52,38 @@ router.get("/me", authenticate, (req, res) => {
   res.json(req.user);
 });
 
+router.post('/merit-lists', authenticate, requirePermission('MERITLIST_APPROVE'), async (req, res, next) => {
+  try {
+    const programmeId = Number(req.body?.programmeId);
+    const waitlistSize = Number(req.body?.waitlistSize ?? 10);
+    if (!Number.isInteger(programmeId) || !Number.isInteger(waitlistSize) || waitlistSize < 0) {
+      return res.status(400).json({ error: 'programmeId and a whole-number waitlistSize are required' });
+    }
+    res.status(201).json(await generateMeritList({ staffUserId: req.user.id, programmeId, waitlistSize }));
+  } catch (err) {
+    next(err);
+  }
+});
 
+router.get('/merit-lists/:id', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const meritListId = Number(req.params.id);
+    if (!Number.isInteger(meritListId)) return res.status(400).json({ error: 'Invalid merit list id' });
+    res.json(await getMeritList(meritListId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/merit-lists/:id/publish', authenticate, requirePermission('MERITLIST_APPROVE'), async (req, res, next) => {
+  try {
+    const meritListId = Number(req.params.id);
+    if (!Number.isInteger(meritListId)) return res.status(400).json({ error: 'Invalid merit list id' });
+    res.json(await publishMeritList({ staffUserId: req.user.id, meritListId }));
+  } catch (err) {
+    next(err);
+  }
+});
 
 
 

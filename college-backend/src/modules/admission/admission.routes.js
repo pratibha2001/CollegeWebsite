@@ -8,6 +8,7 @@ import { submitApplication } from './application.service.js';
 import { listQueue, getApplicationDetail, startReview, verifyDocument, completeReview } from './review.service.js';
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
+import { generateMeritList, getMeritList, publishMeritList } from './merit.service.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
@@ -228,6 +229,39 @@ router.post('/review/applications/:id/complete', authenticate, requirePermission
     const applicationId = Number(req.params.id);
     if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
     res.json(await completeReview({ staffUserId: req.user.id, applicationId, note: req.body?.note }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/merit-lists', authenticate, requirePermission('MERITLIST_APPROVE'), async (req, res, next) => {
+  try {
+    const programmeId = Number(req.body?.programmeId);
+    const waitlistSize = Number(req.body?.waitlistSize ?? 10);
+    if (!Number.isInteger(programmeId) || !Number.isInteger(waitlistSize) || waitlistSize < 0) {
+      return res.status(400).json({ error: 'programmeId and a whole-number waitlistSize are required' });
+    }
+    res.status(201).json(await generateMeritList({ staffUserId: req.user.id, programmeId, waitlistSize }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/merit-lists/:id', authenticate, requirePermission('APPLICATION_REVIEW'), async (req, res, next) => {
+  try {
+    const meritListId = Number(req.params.id);
+    if (!Number.isInteger(meritListId)) return res.status(400).json({ error: 'Invalid merit list id' });
+    res.json(await getMeritList(meritListId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/merit-lists/:id/publish', authenticate, requirePermission('MERITLIST_APPROVE'), async (req, res, next) => {
+  try {
+    const meritListId = Number(req.params.id);
+    if (!Number.isInteger(meritListId)) return res.status(400).json({ error: 'Invalid merit list id' });
+    res.json(await publishMeritList({ staffUserId: req.user.id, meritListId }));
   } catch (err) {
     next(err);
   }
