@@ -325,3 +325,57 @@ export async function markApplicationFeePaid(db, applicationId) {
     [applicationId]
   );
 }
+
+export async function respondToOffer({ userId, applicationId, accept }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const { rows } = await client.query(
+      `select "Status", "ProgrammeId", "AcademicYear", "IntakeMonth", "ApplicationNo"
+       from "Admission"."Applications"
+       where "ApplicationId" = $1 and "ApplicantUserId" = $2
+       for update`,
+      [applicationId, userId]
+    );
+    const app = rows[0];
+    if (!app) throw httpError(404, 'Application not found');
+    if (app.Status !== 'Offered') throw httpError(409, `No open offer (status: ${app.Status})`);
+
+    const toStatus = accept ? 'Accepted' : 'Withdrawn';
+    await client.query(
+      `update "Admission"."Applications"
+       set "Status" = $2::varchar, "UpdatedAt" = now(), "RowVersion" = "RowVersion" + 1
+       where "ApplicationId" = $1`,
+      [applicationId, toStatus]
+    );
+    await client.query(
+      `insert into "Admission"."ApplicationStatusHistory"
+         ("ApplicationId", "FromStatus", "ToStatus", "ActorUserId", "ActorType", "Reason")
+       values ($1, 'Offered', $2, $3, 'Applicant', $4)`,
+      [applicationId, toStatus, userId, accept ? 'Offer accepted' : 'Offer declined']
+    );
+
+    if (accept) {
+      await client.query(
+        `insert into "Common"."OutboxEvents" ("AggregateType", "AggregateId", "EventType", "Payload")
+         values ('Application', $1, 'ApplicationAccepted', $2)`,
+        [String(applicationId), {
+          applicationId,
+          applicationNo: app.ApplicationNo,
+          userId,
+          programmeId: app.ProgrammeId,
+          academicYear: app.AcademicYear,
+          intakeMonth: app.IntakeMonth,
+        }]
+      );
+    }
+
+    await client.query('commit');
+    return { applicationId, status: toStatus };
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}

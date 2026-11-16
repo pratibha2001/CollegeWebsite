@@ -2,9 +2,8 @@ import { Router } from 'express';
 import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { parsePersonal, parseAcademics } from './validation.js';
-import { createDraft, listMine, savePersonal, saveAcademics } from './application.service.js';
+import { createDraft, listMine, savePersonal, saveAcademics, submitApplication, respondToOffer } from './application.service.js';
 import { requestGuardianConsent, confirmGuardianConsent } from './guardian.service.js';
-import { submitApplication } from './application.service.js';
 import { listQueue, getApplicationDetail, startReview, verifyDocument, completeReview } from './review.service.js';
 import multer from 'multer';
 import { uploadDocument } from './document.service.js';
@@ -262,6 +261,18 @@ router.post('/merit-lists/:id/publish', authenticate, requirePermission('MERITLI
     const meritListId = Number(req.params.id);
     if (!Number.isInteger(meritListId)) return res.status(400).json({ error: 'Invalid merit list id' });
     res.json(await publishMeritList({ staffUserId: req.user.id, meritListId }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/applications/:id/offer-response', authenticate, requirePermission('APPLICATION_CREATE_OWN'), async (req, res, next) => {
+  try {
+    const applicationId = Number(req.params.id);
+    if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+    const { decision } = req.body ?? {};
+    if (!['Accept', 'Decline'].includes(decision)) return res.status(400).json({ error: 'decision must be Accept or Decline' });
+    res.json(await respondToOffer({ userId: req.user.id, applicationId, accept: decision === 'Accept' }));
   } catch (err) {
     next(err);
   }
