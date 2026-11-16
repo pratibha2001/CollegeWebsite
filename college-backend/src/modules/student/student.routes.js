@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../../config/db.js';
 import { authenticate } from '../../middleware/auth.js';
+import { listSemesterCourses, registerCourse } from './course.service.js';
 
 const router = Router();
 
@@ -20,6 +21,16 @@ router.get('/me', authenticate, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.get('/courses', authenticate, async (req, res, next) => {
+  try { res.json(await listSemesterCourses(req.user.id)); } catch (e) { next(e); }
+});
+
+router.post('/courses/:semesterCourseId/register', authenticate, async (req, res, next) => {
+  try {
+    res.status(201).json(await registerCourse(req.user.id, Number(req.params.semesterCourseId)));
+  } catch (e) { next(e); }
 });
 
 export default router;
