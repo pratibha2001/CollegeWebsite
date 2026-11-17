@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../../config/db.js';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, requirePermission } from '../../middleware/auth.js';
+import { getRoster, markAttendance } from './attendance.service.js';
 import { listSemesterCourses, registerCourse } from './course.service.js';
 
 const router = Router();
@@ -32,5 +33,21 @@ router.post('/courses/:semesterCourseId/register', authenticate, async (req, res
     res.status(201).json(await registerCourse(req.user.id, Number(req.params.semesterCourseId)));
   } catch (e) { next(e); }
 });
+
+router.get('/faculty/courses/:semesterCourseId/roster', authenticate, requirePermission('ATTENDANCE_MARK'),
+  async (req, res, next) => {
+    try { res.json(await getRoster(req.user.id, Number(req.params.semesterCourseId))); } catch (e) { next(e); }
+  });
+
+router.post('/faculty/courses/:semesterCourseId/attendance', authenticate, requirePermission('ATTENDANCE_MARK'),
+  async (req, res, next) => {
+    try {
+      const { sessionDate, startTime, records } = req.body;
+      res.status(201).json(await markAttendance({
+        facultyUserId: req.user.id, semesterCourseId: Number(req.params.semesterCourseId),
+        sessionDate, startTime, records,
+      }));
+    } catch (e) { next(e); }
+  });
 
 export default router;
