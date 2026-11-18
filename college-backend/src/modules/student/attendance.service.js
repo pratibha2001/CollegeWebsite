@@ -1,5 +1,6 @@
 import pool from '../../config/db.js';
 import { httpError } from '../../shared/errors.js';
+import { getStudent } from './course.service.js';
 
 const STATUSES = ['Present', 'Absent', 'Late', 'Excused'];
 
@@ -65,4 +66,28 @@ export async function markAttendance({ facultyUserId, semesterCourseId, sessionD
   } catch (e) {
     await client.query('rollback'); throw e;
   } finally { client.release(); }
+}
+
+
+
+export async function myAttendance(userId) {
+  const s = await getStudent(pool, userId);
+  const { rows } = await pool.query(
+    `select c."CourseCode", c."CourseName",
+            count(a."AttendanceSessionId") filter (where coalesce(r."Status", 'Absent') <> 'Excused')::int as held,
+            count(*) filter (where r."Status" in ('Present', 'Late'))::int as attended
+       from "Student"."CourseRegistrations" cr
+       join "Academics"."SemesterCourses" sc on sc."SemesterCourseId" = cr."SemesterCourseId"
+       join "Academics"."Courses" c on c."CourseId" = sc."CourseId"
+       left join "Student"."AttendanceSessions" a on a."SemesterCourseId" = cr."SemesterCourseId"
+       left join "Student"."AttendanceRecords" r
+              on r."AttendanceSessionId" = a."AttendanceSessionId" and r."StudentId" = cr."StudentId"
+      where cr."StudentId" = $1 and cr."Status" = 'Registered'
+      group by c."CourseCode", c."CourseName"
+      order by c."CourseCode"`, [s.StudentId]);
+
+  return rows.map((r) => {
+    const percent = r.held ? Math.round((r.attended * 1000) / r.held) / 10 : null;
+    return { ...r, percent, shortage: percent !== null && percent < 75 };
+  });
 }

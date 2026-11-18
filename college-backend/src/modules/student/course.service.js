@@ -1,7 +1,7 @@
 import pool from '../../config/db.js';
 import { httpError } from '../../shared/errors.js';
 
-async function getStudent(db, userId) {
+export async function getStudent(db, userId) {
   const { rows } = await db.query(
     `select "StudentId", "BatchId" from "Student"."Students"
       where "UserId" = $1 and "Status" = 'Active'`, [userId]);

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
-import { getRoster, markAttendance } from './attendance.service.js';
+import { getRoster, markAttendance ,myAttendance} from './attendance.service.js';
 import { listSemesterCourses, registerCourse } from './course.service.js';
 
 const router = Router();
@@ -49,5 +49,9 @@ router.post('/faculty/courses/:semesterCourseId/attendance', authenticate, requi
       }));
     } catch (e) { next(e); }
   });
+
+  router.get('/attendance', authenticate, async (req, res, next) => {
+  try { res.json(await myAttendance(req.user.id)); } catch (e) { next(e); }
+});
 
 export default router;
