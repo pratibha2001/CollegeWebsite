@@ -3,6 +3,7 @@ import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { getRoster, markAttendance ,myAttendance} from './attendance.service.js';
 import { listSemesterCourses, registerCourse } from './course.service.js';
+import { createAssessment, enterMarks, publishAssessment, myResults } from './marks.service.js';
 
 const router = Router();
 
@@ -54,8 +55,6 @@ router.post('/faculty/courses/:semesterCourseId/attendance', authenticate, requi
   try { res.json(await myAttendance(req.user.id)); } catch (e) { next(e); }
 });
 
-import { createAssessment, enterMarks } from './marks.service.js';
-
 router.post('/faculty/courses/:semesterCourseId/assessments', authenticate, requirePermission('MARKS_ENTER'),
   async (req, res, next) => {
     try {
@@ -76,5 +75,16 @@ router.post('/faculty/assessments/:assessmentId/marks', authenticate, requirePer
       }));
     } catch (e) { next(e); }
   });
+
+  router.post('/faculty/assessments/:assessmentId/publish', authenticate, requirePermission('MARKS_ENTER'),
+  async (req, res, next) => {
+    try {
+      res.json(await publishAssessment({ facultyUserId: req.user.id, assessmentId: Number(req.params.assessmentId) }));
+    } catch (e) { next(e); }
+  });
+
+router.get('/results', authenticate, async (req, res, next) => {
+  try { res.json(await myResults(req.user.id)); } catch (e) { next(e); }
+});
 
 export default router;

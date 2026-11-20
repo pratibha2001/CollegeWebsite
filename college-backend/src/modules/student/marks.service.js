@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import { httpError } from '../../shared/errors.js';
 import { assertTeaches } from './attendance.service.js';
+import { getStudent } from './course.service.js';
 
 const TYPES = ['Quiz', 'Assignment', 'MidTerm', 'Lab', 'Project', 'EndTerm'];
 
@@ -89,4 +90,63 @@ export async function enterMarks({ facultyUserId, assessmentId, entries, reason 
   } catch (e) {
     await client.query('rollback'); throw e;
   } finally { client.release(); }
+}
+
+export async function publishAssessment({ facultyUserId, assessmentId }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const { rows: [a] } = await client.query(
+      `select "SemesterCourseId", "IsPublished" from "Student"."Assessments"
+        where "AssessmentId" = $1 for update`, [assessmentId]);
+    if (!a) throw httpError(404, 'Assessment not found');
+    await assertTeaches(client, facultyUserId, a.SemesterCourseId);
+    if (a.IsPublished) throw httpError(409, 'Already published');
+
+    const { rows: missing } = await client.query(
+      `select s."EnrolmentNo" from "Student"."CourseRegistrations" cr
+         join "Student"."Students" s on s."StudentId" = cr."StudentId"
+         left join "Student"."ResultEntries" re
+           on re."AssessmentId" = $1 and re."StudentId" = cr."StudentId" and re."IsCurrent"
+        where cr."SemesterCourseId" = $2 and cr."Status" = 'Registered' and re."ResultEntryId" is null`,
+      [assessmentId, a.SemesterCourseId]);
+    if (missing.length) {
+      throw httpError(409, `Marks missing for: ${missing.map((m) => m.EnrolmentNo).join(', ')}`);
+    }
+
+    await client.query(
+      `update "Student"."Assessments" set "IsPublished" = true, "PublishedAt" = now()
+        where "AssessmentId" = $1`, [assessmentId]);
+    await client.query('commit');
+    return { published: true };
+  } catch (e) {
+    await client.query('rollback'); throw e;
+  } finally { client.release(); }
+}
+
+export async function myResults(userId) {
+  const s = await getStudent(pool, userId);
+  const { rows } = await pool.query(
+    `select c."CourseCode", c."CourseName", a."AssessmentName", a."AssessmentType",
+            a."MaxMarks"::float as "maxMarks", a."Weightage"::float as weightage,
+            re."Marks"::float as marks, coalesce(re."IsAbsent", false) as "isAbsent"
+       from "Student"."CourseRegistrations" cr
+       join "Academics"."SemesterCourses" sc on sc."SemesterCourseId" = cr."SemesterCourseId"
+       join "Academics"."Courses" c on c."CourseId" = sc."CourseId"
+       join "Student"."Assessments" a on a."SemesterCourseId" = sc."SemesterCourseId" and a."IsPublished"
+       left join "Student"."ResultEntries" re
+         on re."AssessmentId" = a."AssessmentId" and re."StudentId" = cr."StudentId" and re."IsCurrent"
+      where cr."StudentId" = $1 and cr."Status" = 'Registered'
+      order by c."CourseCode", a."PublishedAt"`, [s.StudentId]);
+
+  const courses = {};
+  for (const r of rows) {
+    const c = (courses[r.CourseCode] ??= {
+      courseCode: r.CourseCode, courseName: r.CourseName, assessments: [], weightedScore: 0,
+    });
+    c.assessments.push({ name: r.AssessmentName, type: r.AssessmentType, marks: r.marks,
+      maxMarks: r.maxMarks, isAbsent: r.isAbsent, weightage: r.weightage });
+    if (r.marks !== null) c.weightedScore += (r.marks / r.maxMarks) * r.weightage;
+  }
+  return Object.values(courses).map((c) => ({ ...c, weightedScore: Math.round(c.weightedScore * 100) / 100 }));
 }
