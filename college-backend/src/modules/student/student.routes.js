@@ -54,4 +54,27 @@ router.post('/faculty/courses/:semesterCourseId/attendance', authenticate, requi
   try { res.json(await myAttendance(req.user.id)); } catch (e) { next(e); }
 });
 
+import { createAssessment, enterMarks } from './marks.service.js';
+
+router.post('/faculty/courses/:semesterCourseId/assessments', authenticate, requirePermission('MARKS_ENTER'),
+  async (req, res, next) => {
+    try {
+      const { name, type, maxMarks, weightage } = req.body;
+      res.status(201).json(await createAssessment({
+        facultyUserId: req.user.id, semesterCourseId: Number(req.params.semesterCourseId),
+        name, type, maxMarks, weightage,
+      }));
+    } catch (e) { next(e); }
+  });
+
+router.post('/faculty/assessments/:assessmentId/marks', authenticate, requirePermission('MARKS_ENTER'),
+  async (req, res, next) => {
+    try {
+      const { entries, reason } = req.body;
+      res.json(await enterMarks({
+        facultyUserId: req.user.id, assessmentId: Number(req.params.assessmentId), entries, reason,
+      }));
+    } catch (e) { next(e); }
+  });
+
 export default router;

@@ -4,7 +4,7 @@ import { getStudent } from './course.service.js';
 
 const STATUSES = ['Present', 'Absent', 'Late', 'Excused'];
 
-async function assertTeaches(db, facultyUserId, semesterCourseId) {
+export async function assertTeaches(db, facultyUserId, semesterCourseId) {
   const { rows } = await db.query(
     `select 1 from "Academics"."SemesterCourses"
       where "SemesterCourseId" = $1 and "FacultyUserId" = $2`, [semesterCourseId, facultyUserId]);
