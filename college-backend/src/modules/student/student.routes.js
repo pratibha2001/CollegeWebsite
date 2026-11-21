@@ -5,6 +5,8 @@ import { getRoster, markAttendance ,myAttendance} from './attendance.service.js'
 import { listSemesterCourses, registerCourse } from './course.service.js';
 import { createAssessment, enterMarks, publishAssessment, myResults } from './marks.service.js';
 import { generateGradeSheets, publishGradeSheets, myGradeSheets } from './gradesheet.service.js';
+import { createRequest, listMyRequests, cancelRequest, listQueue as srQueue, actOnRequest } from './servicerequest.service.js';
+
 
 const router = Router();
 
@@ -103,5 +105,27 @@ router.post('/exams/semesters/:semesterId/grade-sheets/publish', authenticate, r
 router.get('/grade-sheets', authenticate, async (req, res, next) => {
   try { res.json(await myGradeSheets(req.user.id)); } catch (e) { next(e); }
 });
+
+router.post('/service-requests', authenticate, async (req, res, next) => {
+  try { res.status(201).json(await createRequest(req.user.id, req.body ?? {})); } catch (e) { next(e); }
+});
+router.get('/service-requests', authenticate, async (req, res, next) => {
+  try { res.json(await listMyRequests(req.user.id)); } catch (e) { next(e); }
+});
+router.post('/service-requests/:id/cancel', authenticate, async (req, res, next) => {
+  try { res.json(await cancelRequest(req.user.id, Number(req.params.id))); } catch (e) { next(e); }
+});
+
+router.get('/staff/service-requests', authenticate, requirePermission('SERVICE_REQUEST_HANDLE'), async (req, res, next) => {
+  try { res.json(await srQueue(req.query.status ?? 'Submitted')); } catch (e) { next(e); }
+});
+router.post('/staff/service-requests/:id/action', authenticate, requirePermission('SERVICE_REQUEST_HANDLE'),
+  async (req, res, next) => {
+    try {
+      res.json(await actOnRequest({ staffUserId: req.user.id, requestId: Number(req.params.id),
+        action: req.body?.action, note: req.body?.note }));
+    } catch (e) { next(e); }
+  });
+
 
 export default router;
