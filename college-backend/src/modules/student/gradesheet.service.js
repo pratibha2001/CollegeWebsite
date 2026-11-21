@@ -1,5 +1,6 @@
 import pool from '../../config/db.js';
 import { httpError } from '../../shared/errors.js';
+import { getStudent } from './course.service.js';
 
 const GRADES = [[90, 'O', 10], [80, 'A+', 9], [70, 'A', 8], [60, 'B+', 7], [50, 'B', 6], [40, 'C', 5], [0, 'F', 0]];
 export const toGrade = (pct) => GRADES.find(([min]) => pct >= min);
@@ -110,4 +111,29 @@ export async function publishGradeSheets({ semesterId, reason }) {
   } catch (e) {
     await client.query('rollback'); throw e;
   } finally { client.release(); }
+}
+
+export async function myGradeSheets(userId) {
+  const s = await getStudent(pool, userId);
+  const { rows: sheets } = await pool.query(
+    `select g."SemesterId", sem."SemesterNo", g."VersionNo",
+            g."Sgpa"::float as sgpa, g."Cgpa"::float as cgpa, g."PublishedAt"
+       from "Student"."GradeSheets" g
+       join "Academics"."Semesters" sem on sem."SemesterId" = g."SemesterId"
+      where g."StudentId" = $1 and g."Status" in ('Published', 'Locked')
+      order by sem."SemesterNo"`, [s.StudentId]);
+
+  const out = [];
+  for (const g of sheets) {
+    const courses = (await courseScores(pool, g.SemesterId))
+      .filter((c) => c.StudentId === s.StudentId)
+      .map((c) => {
+        const [, grade, gradePoint] = toGrade(c.total);
+        return { courseCode: c.CourseCode, courseName: c.CourseName, credits: c.credits,
+                 total: Math.round(c.total * 100) / 100, grade, gradePoint };
+      });
+    out.push({ semesterNo: g.SemesterNo, versionNo: g.VersionNo, sgpa: g.sgpa, cgpa: g.cgpa,
+               publishedAt: g.PublishedAt, courses });
+  }
+  return out;
 }

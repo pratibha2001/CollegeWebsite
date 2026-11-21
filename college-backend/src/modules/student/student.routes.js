@@ -4,7 +4,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { getRoster, markAttendance ,myAttendance} from './attendance.service.js';
 import { listSemesterCourses, registerCourse } from './course.service.js';
 import { createAssessment, enterMarks, publishAssessment, myResults } from './marks.service.js';
-import { generateGradeSheets, publishGradeSheets } from './gradesheet.service.js';
+import { generateGradeSheets, publishGradeSheets, myGradeSheets } from './gradesheet.service.js';
 
 const router = Router();
 
@@ -99,5 +99,9 @@ router.post('/exams/semesters/:semesterId/grade-sheets/publish', authenticate, r
       res.json(await publishGradeSheets({ semesterId: Number(req.params.semesterId), reason: req.body?.reason }));
     } catch (e) { next(e); }
   });
+
+router.get('/grade-sheets', authenticate, async (req, res, next) => {
+  try { res.json(await myGradeSheets(req.user.id)); } catch (e) { next(e); }
+});
 
 export default router;
