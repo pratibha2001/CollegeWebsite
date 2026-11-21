@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import pool from '../../config/db.js';
 import { authenticate, requirePermission } from '../../middleware/auth.js';
-import { createApplicationFeeOrder, handleWebhook } from './payment.service.js';
+import { createApplicationFeeOrder, handleWebhook, getSemesterFeeStatus, createSemesterFeeOrder } from './payment.service.js';
 import { sign } from './fake.gateway.js';
 
 const router = Router();
@@ -61,5 +61,18 @@ if (process.env.NODE_ENV !== 'production') {
     }
   });
 }
+
+router.get('/semester-fee/:semesterId', authenticate, async (req, res, next) => {
+  try { res.json(await getSemesterFeeStatus({ userId: req.user.id, semesterId: Number(req.params.semesterId) })); }
+  catch (e) { next(e); }
+});
+
+router.post('/semester-fee', authenticate, async (req, res, next) => {
+  try {
+    const semesterId = Number(req.body?.semesterId);
+    if (!Number.isInteger(semesterId)) return res.status(400).json({ error: 'semesterId is required' });
+    res.status(201).json(await createSemesterFeeOrder({ userId: req.user.id, semesterId }));
+  } catch (e) { next(e); }
+});
 
 export default router;

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import pool from '../../config/db.js';
 import { getApplicationFee, markApplicationFeePaid } from '../admission/application.service.js';
 import { PROVIDER, createProviderOrder, verifySignature } from './fake.gateway.js';
+import { getSemesterFee } from '../student/fee.service.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
@@ -116,4 +117,48 @@ export async function handleWebhook({ rawBody, signature, event }) {
   } finally {
     client.release();
   }
+}
+
+
+export async function getSemesterFeeStatus({ userId, semesterId }) {
+  const fee = await getSemesterFee(pool, { userId, semesterId });
+  const { rows: [paid] } = await pool.query(
+    `select "ReceiptNo", "PaidAt" from "Payments"."PaymentOrders"
+      where "PayerUserId" = $1 and "Purpose" = 'TuitionFee' and "ReferenceId" = $2 and "Status" = 'Paid'`,
+    [userId, semesterId]);
+  return { ...fee, totalRupees: fee.totalPaise / 100,
+           status: paid ? 'Paid' : 'Due', receiptNo: paid?.ReceiptNo ?? null, paidAt: paid?.PaidAt ?? null };
+}
+
+export async function createSemesterFeeOrder({ userId, semesterId }) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    // lock the payer so a double click can't create two orders
+    await client.query(`select 1 from "Common"."Users" where "UserId" = $1 for update`, [userId]);
+
+    const fee = await getSemesterFeeStatus({ userId, semesterId });
+    if (fee.status === 'Paid') throw httpError(409, `Already paid (receipt ${fee.receiptNo})`);
+
+    const { rows: [open] } = await client.query(
+      `select "OrderNo", "ProviderOrderId", "AmountPaise", "ExpiresAt" from "Payments"."PaymentOrders"
+        where "PayerUserId" = $1 and "Purpose" = 'TuitionFee' and "ReferenceId" = $2 and "AmountPaise" = $3
+          and "Status" in ('Created', 'Pending') and "ExpiresAt" > now()
+        order by "CreatedAt" desc limit 1`, [userId, semesterId, fee.totalPaise]);
+    if (open) { await client.query('commit'); return toOrder(open); }
+
+    const orderNo = 'ORD' + Date.now() + crypto.randomInt(100, 1000);
+    const { providerOrderId } = createProviderOrder();
+    const { rows: [order] } = await client.query(
+      `insert into "Payments"."PaymentOrders"
+         ("OrderNo","PayerUserId","Purpose","ReferenceType","ReferenceId","AmountPaise",
+          "Provider","ProviderOrderId","IdempotencyKey","ExpiresAt","Status")
+       values ($1, $2, 'TuitionFee', 'Semester', $3, $4, $5, $6, $1, now() + interval '30 minutes', 'Pending')
+       returning "OrderNo", "ProviderOrderId", "AmountPaise", "ExpiresAt"`,
+      [orderNo, userId, semesterId, fee.totalPaise, PROVIDER, providerOrderId]);
+    await client.query('commit');
+    return toOrder(order);
+  } catch (e) {
+    await client.query('rollback'); throw e;
+  } finally { client.release(); }
 }
