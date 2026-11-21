@@ -4,6 +4,7 @@ import { authenticate, requirePermission } from '../../middleware/auth.js';
 import { getRoster, markAttendance ,myAttendance} from './attendance.service.js';
 import { listSemesterCourses, registerCourse } from './course.service.js';
 import { createAssessment, enterMarks, publishAssessment, myResults } from './marks.service.js';
+import { generateGradeSheets, publishGradeSheets } from './gradesheet.service.js';
 
 const router = Router();
 
@@ -86,5 +87,17 @@ router.post('/faculty/assessments/:assessmentId/marks', authenticate, requirePer
 router.get('/results', authenticate, async (req, res, next) => {
   try { res.json(await myResults(req.user.id)); } catch (e) { next(e); }
 });
+
+router.post('/exams/semesters/:semesterId/grade-sheets', authenticate, requirePermission('RESULTS_PUBLISH'),
+  async (req, res, next) => {
+    try { res.status(201).json(await generateGradeSheets(Number(req.params.semesterId))); } catch (e) { next(e); }
+  });
+
+router.post('/exams/semesters/:semesterId/grade-sheets/publish', authenticate, requirePermission('RESULTS_PUBLISH'),
+  async (req, res, next) => {
+    try {
+      res.json(await publishGradeSheets({ semesterId: Number(req.params.semesterId), reason: req.body?.reason }));
+    } catch (e) { next(e); }
+  });
 
 export default router;
