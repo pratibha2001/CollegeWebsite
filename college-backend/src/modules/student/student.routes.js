@@ -6,6 +6,7 @@ import { listSemesterCourses, registerCourse } from './course.service.js';
 import { createAssessment, enterMarks, publishAssessment, myResults } from './marks.service.js';
 import { generateGradeSheets, publishGradeSheets, myGradeSheets } from './gradesheet.service.js';
 import { createRequest, listMyRequests, cancelRequest, listQueue as srQueue, actOnRequest } from './servicerequest.service.js';
+import { clearArea, issueDegree, verifyDegree, myClearance } from './graduation.service.js';
 
 
 const router = Router();
@@ -127,5 +128,25 @@ router.post('/staff/service-requests/:id/action', authenticate, requirePermissio
     } catch (e) { next(e); }
   });
 
+ 
+router.get('/graduation', authenticate, async (req, res, next) => {
+  try { res.json(await myClearance(req.user.id)); } catch (e) { next(e); }
+});
+
+router.post('/staff/graduation/:studentId/clear', authenticate, requirePermission('GRADUATION_CLEAR'),
+  async (req, res, next) => {
+    try { res.json(await clearArea({ studentId: Number(req.params.studentId), area: req.body?.area })); }
+    catch (e) { next(e); }
+  });
+
+router.post('/staff/graduation/:studentId/issue-degree', authenticate, requirePermission('DEGREE_ISSUE'),
+  async (req, res, next) => {
+    try { res.json(await issueDegree({ studentId: Number(req.params.studentId) })); } catch (e) { next(e); }
+  });
+
+// no login on purpose
+router.get('/verify-degree/:code', async (req, res, next) => {
+  try { res.json(await verifyDegree(req.params.code)); } catch (e) { next(e); }
+});
 
 export default router;
