@@ -4,6 +4,7 @@ import authRoutes from './modules/common/auth.routes.js';
 import admissionRoutes from './modules/admission/admission.routes.js';
 import paymentRoutes from './modules/payments/payment.routes.js';
 import studentRoutes from './modules/student/student.routes.js';
+import alumniRoutes from './modules/alumni/alumni.routes.js';
 
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admission', admissionRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/alumni', alumniRoutes);
 
 app.use((err, req, res, next) => {
   if (err.name === 'MulterError') return res.status(400).json({ error: err.message });

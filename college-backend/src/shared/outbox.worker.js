@@ -1,8 +1,11 @@
 import pool from '../config/db.js';
 import { handleApplicationAccepted } from '../modules/student/student.events.js';
+import { handleStudentGraduated } from '../modules/alumni/alumni.events.js';
+
 
 const handlers = {
   ApplicationAccepted: handleApplicationAccepted,
+  StudentGraduated: handleStudentGraduated,
 };
 
 async function processOne() {

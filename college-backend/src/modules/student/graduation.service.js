@@ -104,3 +104,12 @@ export async function myClearance(userId) {
        from "Student"."GraduationClearances" where "StudentId" = $1`, [s.StudentId]);
   return c ?? { AcademicsCleared: false, LibraryCleared: false, HostelCleared: false, FinanceCleared: false, ClearedAt: null };
 }
+
+export async function getGraduateInfo(db, userId) {
+  const { rows: [g] } = await db.query(
+    `select s."StudentId", s."ProgrammeId", extract(year from gc."DegreeIssuedAt")::int as "graduationYear"
+       from "Student"."Students" s
+       join "Student"."GraduationClearances" gc on gc."StudentId" = s."StudentId"
+      where s."UserId" = $1 and s."Status" = 'Graduated' and gc."DegreeIssuedAt" is not null`, [userId]);
+  return g ?? null;
+}
